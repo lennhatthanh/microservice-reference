@@ -138,8 +138,8 @@ celerybeat.pid
 
 # RabbitMQ
 mnesia/
-rabbitmq/
 rabbitmq-data/
+*.rabbitmq.pid
 
 # ActiveMQ
 activemq-data/
@@ -149,6 +149,8 @@ activemq-data/
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
 .venv
 env/
@@ -216,3 +218,59 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node / React
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.pnpm-store/
+
+# React / Vite build output
+frontend/react-app/dist/
+frontend/react-app/build/
+frontend/react-app/.vite/
+frontend/react-app/.turbo/
+frontend/react-app/coverage/
+frontend/react-app/.env
+frontend/react-app/.env.*
+!frontend/react-app/.env.example
+
+# Docker / local runtime files
+docker-compose.override.yml
+*.local.yml
+*.local.yaml
+.docker/
+docker-data/
+volumes/
+tmp/
+temp/
+
+# Local databases and dumps
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.sql.gz
+*.bak
+
+# Logs
+logs/
+*.log.*
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE / editor local state
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local agent/tooling state
+.codex/
+.agents/
