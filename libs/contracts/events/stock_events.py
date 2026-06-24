@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from decimal import Decimal
 from pydantic import BaseModel
 
 from .base import IntegrationEvent
@@ -15,6 +16,8 @@ class StockReserved(IntegrationEvent):
     source: str = "product-service"
     reservation_id: UUID
     order_id: UUID
+    user_id: UUID
+    total_amount: Decimal
     items: list[StockReservationItemPayload]
 
 

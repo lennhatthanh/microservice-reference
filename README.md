@@ -72,11 +72,11 @@ Each service owns a separate database. Cross-service joins are not allowed.
 | API Gateway | `apps/api-gateway` | Nginx routes external HTTP requests to service APIs. |
 | Database per Service | All backend services | Each service has its own `app/infrastructure/database` and Alembic folder. |
 | DDD tactical structure | All backend services | Keep `domain`, `application`, `infrastructure`, `schemas`, and `api` separated. |
-| Repository Pattern | All backend services | Define repository contracts in `domain/repositories.py`; implement DB access in `infrastructure/repositories`. |
+| Repository Pattern | Planned for heavier use cases | Current MVP keeps SQLAlchemy access inside application services for readability; move repeated queries to repositories when the code grows. |
 | Service Layer | All backend services | Put use-case orchestration in `application/services`. |
-| CQRS | Mainly `order-service` | Commands mutate order state; queries read from `order_read_models`. |
-| Saga Orchestration | `order-service` | `application/sagas/order_saga.py` coordinates stock reservation, payment, completion/cancellation. |
-| Event-driven Architecture | Product, order, payment, notification | Publish/consume business events through RabbitMQ, not direct imports. |
+| CQRS | Planned for `order-service` read models | Commands and queries are split by routes/services now; add read models when reporting screens need denormalized data. |
+| Saga Orchestration | `order-service` | Sync path coordinates REST calls; async path starts with `/api/v1/orders/async` and continues through RabbitMQ events. |
+| Event-driven Architecture | Product, order, payment, notification | Default Compose enables RabbitMQ workers; SQLite fallback disables MQ and keeps REST smoke testing fast. |
 | Outbox Pattern | Services that publish events | Write business data and `outbox_events` in one DB transaction; publisher later sends events to RabbitMQ. |
 | DTO / Schema Pattern | All service APIs | Keep request/response shapes in `app/schemas`. |
 | Standard API Envelope | All service APIs | Return `ApiResponse[T]` from `libs/common/response` for consistent success/error/meta shape. |
@@ -94,13 +94,13 @@ still fine for simple queries and synchronous gateway-to-service calls.
 | Event | Publisher | Consumer | Purpose |
 | --- | --- | --- | --- |
 | `UserRegistered` | `user-service` | `notification-service` | Send welcome notification or audit log. |
-| `OrderCreated` | `order-service` | `product-service`, `payment-service` | Start order workflow after order is created. |
-| `StockReserved` | `product-service` | `order-service` | Continue saga when inventory is reserved. |
+| `OrderCreated` | `order-service` | `product-service` | Start async saga by asking inventory to reserve stock. |
+| `StockReserved` | `product-service` | `payment-service` | Continue saga by charging the fake payment provider. |
 | `StockReservationFailed` | `product-service` | `order-service` | Cancel order when stock cannot be reserved. |
-| `PaymentSucceeded` | `payment-service` | `order-service`, `notification-service` | Complete order and notify user. |
-| `PaymentFailed` | `payment-service` | `order-service`, `product-service`, `notification-service` | Cancel order and release stock. |
+| `PaymentSucceeded` | `payment-service` | `order-service` | Complete order after payment succeeds. |
+| `PaymentFailed` | `payment-service` | `order-service`, `notification-service` | Cancel order and record failed-payment notification. |
 | `OrderCompleted` | `order-service` | `notification-service` | Send completion notification. |
-| `OrderCancelled` | `order-service` | `product-service`, `notification-service` | Release stock if needed and notify user. |
+| `OrderCancelled` | `order-service` | `notification-service` | Send cancellation notification. |
 
 ## Request and Event Rules
 
@@ -516,7 +516,7 @@ flowchart TB
 | `apps/*-service/app/infrastructure` | Database, broker, repository implementations, and outbox adapters. |
 | `apps/*-service/alembic` | Database migrations for the service. |
 | `frontend/react-app` | React client application. |
-| `libs/common` | Shared config, logging, exception, pagination, and response helpers. |
+| `libs/common` | Shared env helpers, logging/correlation id, exceptions, pagination, response envelope, and FastAPI handlers. |
 | `libs/contracts` | Shared event contracts, enums, and DTOs exchanged between services. |
 | `infrastructure` | Local runtime support: Nginx, Postgres, RabbitMQ, and helper scripts. |
 | `terraform` | AWS infrastructure modules and environment entrypoints. |
@@ -592,6 +592,127 @@ between services without relearning the folder shape.
 | 3 | Order saga, CQRS, notification service | Full order flow can complete or cancel through events. |
 | 4 | Tests, retry, idempotency, logging | System becomes safer for integration work. |
 | 5 | Terraform, Kubernetes, ArgoCD, monitoring | AWS self-hosted cluster runs the system through GitOps with Prometheus/Grafana. |
+
+## Local Run
+
+For now, local development uses Docker Compose only. Terraform, Kubernetes, and
+ArgoCD are intentionally out of scope until the services are stable locally.
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build
+```
+
+Gateway and service URLs:
+
+| Component | URL |
+| --- | --- |
+| API gateway | `http://localhost:8080` |
+| User service | `http://localhost:8001` |
+| Product service | `http://localhost:8002` |
+| Order service | `http://localhost:8003` |
+| Payment service | `http://localhost:8004` |
+| Notification service | `http://localhost:8005` |
+| RabbitMQ management | `http://localhost:15672` |
+| Postgres | `localhost:5432` |
+
+Swagger/OpenAPI docs:
+
+| Service | Swagger |
+| --- | --- |
+| User service | `http://localhost:8001/docs` |
+| Product service | `http://localhost:8002/docs` |
+| Order service | `http://localhost:8003/docs` |
+| Payment service | `http://localhost:8004/docs` |
+| Notification service | `http://localhost:8005/docs` |
+
+React console:
+
+```powershell
+cd frontend/react-app
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`. The UI calls the API gateway at
+`http://localhost:8080`.
+
+Basic smoke flow:
+
+```powershell
+curl http://localhost:8080/healthz
+
+curl -X POST http://localhost:8080/api/v1/auth/register `
+  -H "Content-Type: application/json" `
+  -d "{\"email\":\"demo@example.com\",\"password\":\"password123\",\"full_name\":\"Demo User\"}"
+
+curl -X POST http://localhost:8080/api/v1/categories `
+  -H "Content-Type: application/json" `
+  -d "{\"name\":\"Books\"}"
+
+curl -X POST http://localhost:8080/api/v1/products `
+  -H "Content-Type: application/json" `
+  -d "{\"name\":\"Microservice Book\",\"description\":\"Learning project\",\"price\":\"29.99\",\"stock\":10}"
+```
+
+After creating a product, use its `id` to create an order:
+
+```powershell
+curl -X POST http://localhost:8080/api/v1/orders `
+  -H "Content-Type: application/json" `
+  -d "{\"user_id\":\"<USER_ID>\",\"items\":[{\"product_id\":\"<PRODUCT_ID>\",\"quantity\":1}]}"
+```
+
+If Docker Hub fails while pulling Postgres or RabbitMQ, use the SQLite fallback
+for smoke testing the Python services:
+
+```powershell
+docker compose build
+docker compose -f docker-compose.sqlite.yml up -d
+```
+
+This fallback keeps one DB file per service, but it is not the target runtime.
+Use the default `docker-compose.yml` when Docker can pull Postgres/RabbitMQ.
+
+## Current Local Implementation
+
+The current runnable MVP supports two learning modes.
+
+### SQLite REST Mode
+
+`docker-compose.sqlite.yml` uses one local SQLite file per service and keeps
+`ENABLE_MQ=false`. This is the fastest mode for Swagger, React, and REST smoke
+tests. The order workflow uses synchronous orchestration:
+
+```text
+order-service -> product-service reserve stock
+order-service -> payment-service process fake payment
+order-service -> notification-service write notification log
+```
+
+Tested locally:
+
+- successful order returns `COMPLETED`
+- forced payment failure returns `CANCELLED`
+- stock reservation is released after failed payment
+- `/api/v1/orders/async` writes the order/outbox record and stays `PENDING`
+  because MQ workers are disabled in SQLite mode
+
+### RabbitMQ/Postgres Mode
+
+`docker-compose.yml` enables Postgres, RabbitMQ, outbox publishers, and event
+consumers. The async saga path is:
+
+```text
+order-service OrderCreated
+-> product-service StockReserved or StockReservationFailed
+-> payment-service PaymentSucceeded or PaymentFailed
+-> order-service OrderCompleted or OrderCancelled
+-> notification-service records final event
+```
+
+If Docker Hub fails while pulling Postgres/RabbitMQ images, keep using the
+SQLite fallback until the pull succeeds.
 
 ## Team Split
 

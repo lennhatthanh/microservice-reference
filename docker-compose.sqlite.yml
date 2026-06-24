@@ -1,0 +1,102 @@
+services:
+  user-service:
+    image: microservice-reference-user-service:latest
+    environment:
+      DATABASE_URL: sqlite:////data/user.db
+      JWT_SECRET_KEY: change-me-local-dev-secret
+      JWT_EXPIRE_MINUTES: "1440"
+      RUN_MIGRATIONS_ON_STARTUP: "true"
+    volumes:
+      - user-sqlite:/data
+    ports:
+      - "8001:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  product-service:
+    image: microservice-reference-product-service:latest
+    environment:
+      DATABASE_URL: sqlite:////data/product.db
+      RUN_MIGRATIONS_ON_STARTUP: "true"
+    volumes:
+      - product-sqlite:/data
+    ports:
+      - "8002:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  payment-service:
+    image: microservice-reference-payment-service:latest
+    environment:
+      DATABASE_URL: sqlite:////data/payment.db
+      RUN_MIGRATIONS_ON_STARTUP: "true"
+    volumes:
+      - payment-sqlite:/data
+    ports:
+      - "8004:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  notification-service:
+    image: microservice-reference-notification-service:latest
+    environment:
+      DATABASE_URL: sqlite:////data/notification.db
+      RUN_MIGRATIONS_ON_STARTUP: "true"
+    volumes:
+      - notification-sqlite:/data
+    ports:
+      - "8005:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  order-service:
+    image: microservice-reference-order-service:latest
+    environment:
+      DATABASE_URL: sqlite:////data/order.db
+      PRODUCT_SERVICE_URL: http://product-service:8000
+      PAYMENT_SERVICE_URL: http://payment-service:8000
+      NOTIFICATION_SERVICE_URL: http://notification-service:8000
+      RUN_MIGRATIONS_ON_STARTUP: "true"
+    volumes:
+      - order-sqlite:/data
+    depends_on:
+      - product-service
+      - payment-service
+      - notification-service
+    ports:
+      - "8003:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  api-gateway:
+    image: microservice-reference-api-gateway:latest
+    depends_on:
+      - user-service
+      - product-service
+      - order-service
+      - payment-service
+      - notification-service
+    ports:
+      - "8080:80"
+
+volumes:
+  user-sqlite:
+  product-sqlite:
+  payment-sqlite:
+  notification-sqlite:
+  order-sqlite:

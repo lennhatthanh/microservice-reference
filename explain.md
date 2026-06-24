@@ -349,6 +349,45 @@ from libs.common.response import ApiResponse
 return ApiResponse[OrderResponse].ok(data=order_response)
 ```
 
+FastAPI services should also reuse the shared setup:
+
+```py
+from fastapi import FastAPI
+
+from libs.common.exceptions import AppError
+from libs.common.logging import CorrelationIdMiddleware, configure_logging
+from libs.common.response import app_error_handler, unhandled_error_handler
+
+
+configure_logging()
+
+app = FastAPI(title="user-service")
+app.add_middleware(CorrelationIdMiddleware)
+app.add_exception_handler(AppError, app_error_handler)
+app.add_exception_handler(Exception, unhandled_error_handler)
+```
+
+Common exceptions:
+
+```py
+from libs.common.exceptions import NotFoundError, ValidationError
+
+
+raise NotFoundError("Product not found", code="PRODUCT_NOT_FOUND")
+raise ValidationError("Quantity must be greater than zero", code="INVALID_QUANTITY")
+```
+
+Pagination:
+
+```py
+from libs.common.pagination import PaginationParams, build_page_meta
+
+
+params = PaginationParams(page=1, page_size=20)
+items, total = repo.list(offset=params.offset, limit=params.limit)
+meta = build_page_meta(params.page, params.page_size, total)
+```
+
 ## Infrastructure
 
 `infrastructure/` dùng cho local Docker Compose support.

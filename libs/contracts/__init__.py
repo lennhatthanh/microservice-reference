@@ -1,4 +1,4 @@
-from .dto import Address, Money
+from .dto import Address, AuthUser, Money, TokenClaims
 from .enums import EventType, OrderStatus, PaymentStatus, StockReservationStatus, UserRole
 from .events import (
     IntegrationEvent,
@@ -14,6 +14,7 @@ from .events import (
 
 __all__ = [
     "Address",
+    "AuthUser",
     "EventType",
     "IntegrationEvent",
     "Money",
@@ -29,4 +30,5 @@ __all__ = [
     "StockReserved",
     "UserRegistered",
     "UserRole",
+    "TokenClaims",
 ]

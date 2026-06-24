@@ -91,3 +91,37 @@ return ApiResponse[list[OrderResponse]].ok(
 - Do not return raw ORM models from APIs.
 - Do not expose internal domain entities directly if the public API needs a
   stable shape. Convert to schemas first.
+- Shared auth payloads such as `TokenClaims` and `AuthUser` live in
+  `libs/contracts/dto/auth.py`; JWT issuing/verification logic still belongs to
+  `user-service` or gateway/security code.
+
+## Standard FastAPI Setup
+
+Each service can wire the shared middleware and handlers in `app/main.py`.
+
+```py
+from fastapi import FastAPI
+
+from libs.common.exceptions import AppError
+from libs.common.logging import CorrelationIdMiddleware, configure_logging
+from libs.common.response import app_error_handler, unhandled_error_handler
+
+
+configure_logging()
+
+app = FastAPI(title="order-service")
+app.add_middleware(CorrelationIdMiddleware)
+app.add_exception_handler(AppError, app_error_handler)
+app.add_exception_handler(Exception, unhandled_error_handler)
+```
+
+Then application code can raise shared errors:
+
+```py
+from libs.common.exceptions import NotFoundError
+
+
+raise NotFoundError("Order not found", code="ORDER_NOT_FOUND")
+```
+
+The HTTP response still follows the same `ApiResponse` shape.
