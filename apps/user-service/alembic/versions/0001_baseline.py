@@ -28,8 +28,8 @@ def upgrade() -> None:
             sa.Column("password_hash", sa.String(255), nullable=False),
             sa.Column("full_name", sa.String(255), nullable=False),
             sa.Column("role", sa.String(50), nullable=False),
-            sa.Column("is_active", sa.Boolean(), nullable=False),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         )
         op.create_index("ix_users_email", "users", ["email"], unique=True)
     if "outbox_events" not in tables:

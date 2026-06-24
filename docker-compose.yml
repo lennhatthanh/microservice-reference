@@ -11,7 +11,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./infrastructure/scripts/create-dbs.sql:/docker-entrypoint-initdb.d/01-create-dbs.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ecommerce}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ecommerce} -d postgres"]
       interval: 5s
       timeout: 5s
       retries: 20
