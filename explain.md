@@ -340,6 +340,15 @@ OK: Event schema, enum, response helper.
 Not OK: OrderService, ProductRepository, User business rules.
 ```
 
+Response APIs should reuse `ApiResponse[T]`:
+
+```py
+from libs.common.response import ApiResponse
+
+
+return ApiResponse[OrderResponse].ok(data=order_response)
+```
+
 ## Infrastructure
 
 `infrastructure/` dùng cho local Docker Compose support.

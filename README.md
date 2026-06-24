@@ -79,6 +79,7 @@ Each service owns a separate database. Cross-service joins are not allowed.
 | Event-driven Architecture | Product, order, payment, notification | Publish/consume business events through RabbitMQ, not direct imports. |
 | Outbox Pattern | Services that publish events | Write business data and `outbox_events` in one DB transaction; publisher later sends events to RabbitMQ. |
 | DTO / Schema Pattern | All service APIs | Keep request/response shapes in `app/schemas`. |
+| Standard API Envelope | All service APIs | Return `ApiResponse[T]` from `libs/common/response` for consistent success/error/meta shape. |
 | Dependency Injection | All FastAPI services | Wire DB sessions, repositories, and services through FastAPI dependencies. |
 | Idempotent Consumer | Event consumers | Handlers must tolerate duplicated RabbitMQ messages. |
 | GitOps | `deploy/argocd` | ArgoCD syncs Kubernetes desired state from this repo into the cluster. |
@@ -110,6 +111,7 @@ still fine for simple queries and synchronous gateway-to-service calls.
 - A service must never import another service's `domain`, `application`, or `infrastructure` code.
 - Shared code must live only in `libs/common` or `libs/contracts`.
 - Events should be defined in `libs/contracts/events` before services consume them.
+- HTTP responses should use `ApiResponse[T]` from `libs/common/response`.
 - Commands change state; queries read state.
 
 ## Cloud and Platform Boundary
