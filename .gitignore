@@ -248,6 +248,29 @@ volumes/
 tmp/
 temp/
 
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Kubernetes / Helm local and secret files
+kubeconfig
+*.kubeconfig
+*.kubeconfig.yaml
+*.secret.yaml
+*.secrets.yaml
+secrets.yaml
+values.local.yaml
+values.secret.yaml
+
 # Local databases and dumps
 *.sqlite
 *.sqlite3

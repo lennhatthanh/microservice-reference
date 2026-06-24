@@ -30,6 +30,11 @@ independent microservice:
 | Message broker | RabbitMQ |
 | API gateway | Nginx |
 | Local runtime | Docker Compose |
+| Cloud infra | AWS |
+| Infrastructure as Code | Terraform |
+| Cluster runtime | Self-hosted Kubernetes |
+| GitOps | ArgoCD |
+| Monitoring | Prometheus, Grafana |
 
 ## Architecture Boundary
 
@@ -44,6 +49,9 @@ independent microservice:
 | `frontend/react-app` | UI boundary | User-facing screens and API calls through gateway. | Call internal service containers directly in production-like flow. |
 | `libs/common` | Technical shared library | Logging, config helpers, exceptions, pagination, response envelope. | Contain business rules or database models. |
 | `libs/contracts` | Contract shared library | Event payloads, DTOs, shared enums. | Import service internals or implement workflows. |
+| `terraform` | Cloud infrastructure boundary | Provision AWS network, compute, IAM, DNS, and cluster bootstrap resources. | Deploy application business workloads directly. |
+| `deploy` | Kubernetes/GitOps boundary | Store Kubernetes manifests, ArgoCD apps, and Helm values. | Contain application source code or Terraform state. |
+| `observability` | Monitoring boundary | Store Prometheus rules/alerts and Grafana dashboards/datasources. | Own service business metrics definitions hidden inside one service only. |
 
 ## Database Boundary
 
@@ -73,6 +81,9 @@ Each service owns a separate database. Cross-service joins are not allowed.
 | DTO / Schema Pattern | All service APIs | Keep request/response shapes in `app/schemas`. |
 | Dependency Injection | All FastAPI services | Wire DB sessions, repositories, and services through FastAPI dependencies. |
 | Idempotent Consumer | Event consumers | Handlers must tolerate duplicated RabbitMQ messages. |
+| GitOps | `deploy/argocd` | ArgoCD syncs Kubernetes desired state from this repo into the cluster. |
+| Infrastructure as Code | `terraform` | Terraform provisions AWS resources and bootstraps the self-hosted Kubernetes platform. |
+| Observability as Code | `observability`, `deploy/helm-values` | Prometheus/Grafana config is versioned with the repo. |
 
 ## RabbitMQ Event Flow
 
@@ -101,6 +112,54 @@ still fine for simple queries and synchronous gateway-to-service calls.
 - Events should be defined in `libs/contracts/events` before services consume them.
 - Commands change state; queries read state.
 
+## Cloud and Platform Boundary
+
+The repo can support both local development and self-hosted cloud deployment.
+Keep those concerns separate:
+
+| Area | Path | Responsibility |
+| --- | --- | --- |
+| Local development | `docker-compose.yml`, `infrastructure` | Run services and dependencies locally for fast development. |
+| AWS provisioning | `terraform` | Create VPC, security groups, EC2 Kubernetes nodes, IAM, DNS, and bootstrap resources. |
+| Kubernetes desired state | `deploy/k8s` | Store service manifests, Kustomize bases, and environment overlays. |
+| GitOps control plane | `deploy/argocd` | Define ArgoCD projects and applications. |
+| Platform Helm config | `deploy/helm-values` | Keep values for ingress-nginx, cert-manager, Prometheus, Grafana, RabbitMQ, and Postgres. |
+| Monitoring assets | `observability` | Keep alert rules, recording rules, datasources, and dashboards. |
+
+Terraform should stop at infrastructure and bootstrap. App rollout should be
+handled by ArgoCD from `deploy/`, so the cluster state stays Git-driven.
+
+## Deployment Flow
+
+```mermaid
+flowchart LR
+    Dev["Developer"] --> Git["GitHub repo"]
+    Git --> Actions["CI build images"]
+    Actions --> Registry["Container registry"]
+
+    Terraform["terraform/envs/dev or prod"] --> AWS["AWS infrastructure"]
+    AWS --> K8s["Self-hosted Kubernetes"]
+    Terraform --> ArgoBootstrap["Bootstrap ArgoCD"]
+
+    Git --> ArgoCD["ArgoCD"]
+    ArgoCD --> K8s
+    K8s --> Apps["Microservice workloads"]
+    K8s --> Platform["Ingress, cert-manager, RabbitMQ, Postgres"]
+    Platform --> Prometheus["Prometheus"]
+    Apps --> Prometheus
+    Prometheus --> Grafana["Grafana"]
+```
+
+## Platform Rules
+
+- Terraform manages AWS resources, not application release cycles.
+- ArgoCD owns Kubernetes sync after bootstrap.
+- `deploy/k8s/base` contains reusable manifests.
+- `deploy/k8s/overlays/dev` and `deploy/k8s/overlays/prod` contain environment-specific patches.
+- `deploy/helm-values` contains platform component values, not app source code.
+- `observability` contains dashboards and alerting assets that should be reviewed like code.
+- Secrets should not be committed; use sealed secrets, external secrets, or a managed secret flow later.
+
 ## Structure Tree
 
 ```text
@@ -109,6 +168,49 @@ ecommerce-microservices/
 |-- docker-compose.yml
 |-- .env.example
 |-- Makefile
+|
+|-- terraform/
+|   |-- envs/
+|   |   |-- dev/
+|   |   `-- prod/
+|   `-- modules/
+|       |-- vpc/
+|       |-- security-groups/
+|       |-- ec2-k8s-node/
+|       |-- iam/
+|       `-- route53/
+|
+|-- deploy/
+|   |-- k8s/
+|   |   |-- base/
+|   |   |   |-- api-gateway/
+|   |   |   |-- user-service/
+|   |   |   |-- product-service/
+|   |   |   |-- order-service/
+|   |   |   |-- payment-service/
+|   |   |   |-- notification-service/
+|   |   |   `-- frontend/
+|   |   `-- overlays/
+|   |       |-- dev/
+|   |       `-- prod/
+|   |-- argocd/
+|   |   |-- projects/
+|   |   `-- applications/
+|   `-- helm-values/
+|       |-- ingress-nginx/
+|       |-- cert-manager/
+|       |-- prometheus/
+|       |-- grafana/
+|       |-- rabbitmq/
+|       `-- postgres/
+|
+|-- observability/
+|   |-- prometheus/
+|   |   |-- rules/
+|   |   `-- alerts/
+|   `-- grafana/
+|       |-- dashboards/
+|       `-- datasources/
 |
 |-- apps/
 |   |-- api-gateway/
@@ -308,6 +410,9 @@ ecommerce-microservices/
     |-- event-catalog.md
     |-- api-contracts.md
     |-- sequence-diagrams.md
+    |-- platform.md
+    |-- gitops.md
+    |-- observability.md
     |-- saga-flow.md
     `-- db-schema.md
 ```
@@ -325,6 +430,9 @@ flowchart TB
     Root --> Frontend["frontend/react-app"]
     Root --> Libs["libs"]
     Root --> Infra["infrastructure"]
+    Root --> Terraform["terraform"]
+    Root --> Deploy["deploy"]
+    Root --> Observability["observability"]
     Root --> Docs["docs"]
 
     Apps --> Gateway["api-gateway"]
@@ -368,6 +476,13 @@ flowchart TB
     Infra --> RabbitMQ["rabbitmq"]
     Infra --> Scripts["scripts"]
 
+    Terraform --> AwsInfra["AWS infra"]
+    Deploy --> K8s["k8s manifests"]
+    Deploy --> ArgoCD["argocd"]
+    Deploy --> HelmValues["helm-values"]
+    Observability --> PrometheusCfg["prometheus rules/alerts"]
+    Observability --> GrafanaCfg["grafana dashboards/datasources"]
+
     UserApp -. uses .-> Contracts
     ProductApp -. publishes stock events .-> Contracts
     OrderApp -. consumes/publishes events .-> Contracts
@@ -382,6 +497,10 @@ flowchart TB
     Compose --> Notification
     Compose --> Postgres
     Compose --> RabbitMQ
+    Terraform -. provisions .-> AwsInfra
+    ArgoCD -. syncs .-> K8s
+    HelmValues -. configures .-> PrometheusCfg
+    HelmValues -. configures .-> GrafanaCfg
 ```
 
 ## Folder Purpose
@@ -398,6 +517,11 @@ flowchart TB
 | `libs/common` | Shared config, logging, exception, pagination, and response helpers. |
 | `libs/contracts` | Shared event contracts, enums, and DTOs exchanged between services. |
 | `infrastructure` | Local runtime support: Nginx, Postgres, RabbitMQ, and helper scripts. |
+| `terraform` | AWS infrastructure modules and environment entrypoints. |
+| `deploy/k8s` | Kubernetes manifests and Kustomize overlays for workloads. |
+| `deploy/argocd` | ArgoCD projects and applications for GitOps sync. |
+| `deploy/helm-values` | Helm values for platform services such as ingress, cert-manager, monitoring, RabbitMQ, and Postgres. |
+| `observability` | Prometheus rules/alerts and Grafana assets. |
 | `docs` | Architecture notes, API contracts, event catalog, saga flow, and database schema. |
 
 ## Service Flow
@@ -465,6 +589,7 @@ between services without relearning the folder shape.
 | 2 | RabbitMQ, domain events, outbox | Services publish and consume integration events reliably. |
 | 3 | Order saga, CQRS, notification service | Full order flow can complete or cancel through events. |
 | 4 | Tests, retry, idempotency, logging | System becomes safer for integration work. |
+| 5 | Terraform, Kubernetes, ArgoCD, monitoring | AWS self-hosted cluster runs the system through GitOps with Prometheus/Grafana. |
 
 ## Team Split
 
